@@ -1351,7 +1351,6 @@ export default function ProjectList() {
             backdropFilter: 'blur(10px)',
             color: '#ffffff',
             border: '1px solid rgba(59, 130, 246, 0.2)',
-            position: 'relative',
             boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
             '&::before': {
               content: '""',
