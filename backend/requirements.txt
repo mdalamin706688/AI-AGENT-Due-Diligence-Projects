@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+pydantic
+langchain
+openai
+faiss-cpu
+pypdf2
+chromadb
+python-multipart
+sqlalchemy
+aiosqlite
