@@ -2,6 +2,7 @@ from ..models import Project, ProjectStatus, Question
 from ..storage.memory import storage
 import uuid
 from pypdf import PdfReader
+import fitz  # PyMuPDF
 import re
 from typing import List
 import os
@@ -27,12 +28,21 @@ def parse_questionnaire(file_path: str) -> List[Question]:
             with open(file_path, 'r') as f:
                 text = f.read()
         else:
-            # Handle PDF files
-            with open(file_path, 'rb') as f:
-                reader = PdfReader(f)
+            # Handle PDF files - try PyMuPDF first, fallback to pypdf
+            try:
+                doc = fitz.open(file_path)
                 text = ""
-                for page in reader.pages:
-                    text += page.extract_text() + "\n"
+                for page in doc:
+                    text += page.get_text() + "\n"
+                doc.close()
+                print("Used PyMuPDF for PDF extraction")
+            except Exception as e:
+                print(f"PyMuPDF failed: {e}, falling back to pypdf")
+                with open(file_path, 'rb') as f:
+                    reader = PdfReader(f)
+                    text = ""
+                    for page in reader.pages:
+                        text += page.extract_text() + "\n"
         
         print(f"Extracted {len(text)} characters from file")
         

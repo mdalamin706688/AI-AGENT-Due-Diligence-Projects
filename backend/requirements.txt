@@ -5,6 +5,7 @@ langchain
 openai
 faiss-cpu
 pypdf
+PyMuPDF
 chromadb
 python-multipart
 sqlalchemy
