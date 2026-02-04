@@ -55,9 +55,9 @@ CONFIDENCE: [score]
 """
     
     try:
-        # Call OpenRouter API (using StepFun free model)
+        # Call OpenRouter API (using Arcee Trinity free model)
         response = client.chat.completions.create(
-            model="stepfun-ai/step-3.5-flash",
+            model="stepfun/step-3.5-flash:free",
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that answers questions based on provided documents. Always cite your sources and provide confidence scores."},
                 {"role": "user", "content": prompt}
@@ -67,6 +67,7 @@ CONFIDENCE: [score]
         )
         
         ai_response = response.choices[0].message.content
+        print(f"AI Response: {ai_response}")  # Debug: print the raw response
         
         # Parse the response
         answer_text = "Unable to parse AI response"
