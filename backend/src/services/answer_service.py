@@ -6,8 +6,11 @@ import openai
 import os
 from typing import List
 
-# Set OpenAI API key (in production, use environment variables)
-openai.api_key = os.getenv("OPENAI_API_KEY", "your-api-key-here")
+# Initialize OpenRouter client (OpenAI-compatible API)
+client = openai.OpenAI(
+    api_key=os.getenv("OPENROUTER_API_KEY", "your-api-key-here"),
+    base_url="https://openrouter.ai/api/v1"
+)
 
 def generate_answer(project_id: str, question_text: str) -> Answer:
     """Generate an AI-powered answer with citations and confidence score"""
@@ -49,9 +52,9 @@ CONFIDENCE: [score]
 """
     
     try:
-        # Call OpenAI API
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+        # Call OpenRouter API (using StepFun free model)
+        response = client.chat.completions.create(
+            model="stepfun-ai/step-3.5-flash",
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that answers questions based on provided documents. Always cite your sources and provide confidence scores."},
                 {"role": "user", "content": prompt}
@@ -93,7 +96,7 @@ CONFIDENCE: [score]
                 ))
         
     except Exception as e:
-        print(f"Error calling OpenAI: {e}")
+        print(f"Error calling OpenRouter: {e}")
         # Fallback to mock answer
         answer_text = f"Mock AI answer to: {question_text[:50]}... Based on the indexed documents, this appears to be relevant information that would help answer this question."
         citations = [Citation(document_id="doc1", chunk_id="chunk1", text="Sample citation from document")]
