@@ -4,8 +4,9 @@ pydantic
 langchain
 openai
 faiss-cpu
-pypdf2
+pypdf
 chromadb
 python-multipart
 sqlalchemy
 aiosqlite
+python-dotenv

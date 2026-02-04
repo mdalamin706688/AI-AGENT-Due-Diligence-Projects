@@ -6,7 +6,7 @@ import hashlib
 from ..models import Document
 from ..storage.memory import storage
 import uuid
-import PyPDF2
+from pypdf import PdfReader
 import os
 
 class MockEmbeddings(Embeddings):
@@ -36,12 +36,11 @@ class DocumentIndexer:
         """Extract text from PDF file"""
         text = ""
         try:
-            with open(file_path, 'rb') as f:
-                reader = PyPDF2.PdfReader(f)
-                for page in reader.pages:
-                    page_text = page.extract_text()
-                    if page_text.strip():  # Only add non-empty pages
-                        text += page_text + "\n"
+            reader = PdfReader(file_path)
+            for page in reader.pages:
+                page_text = page.extract_text()
+                if page_text.strip():  # Only add non-empty pages
+                    text += page_text + "\n"
         except Exception as e:
             print(f"Error extracting text from {file_path}: {e}")
         return text
