@@ -5,6 +5,9 @@ import uuid
 import openai
 import os
 from typing import List
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Initialize OpenRouter client (OpenAI-compatible API)
 client = openai.OpenAI(
