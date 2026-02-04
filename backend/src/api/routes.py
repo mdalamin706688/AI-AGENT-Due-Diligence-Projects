@@ -28,14 +28,14 @@ def get_request_status_user_friendly(request_id: str):
     elif request.status == RequestStatus.IN_PROGRESS:
         if request.result and "progress" in request.result:
             progress_data = request.result["progress"]
-        return {
-            "status": "processing",
-            "message": f"🤖 AI analyzing: '{progress_data['current_question'][:30]}...'",
-            "progress": progress_data["progress"],
-            "subtitle": f"Question {progress_data['current']}/{progress_data['total']} • {progress_data['estimated_seconds_remaining']}s remaining",
-            "icon": "brain",
-            "color": "blue"
-        }
+            return {
+                "status": "processing",
+                "message": f"🤖 AI analyzing: '{progress_data['current_question'][:30]}...'",
+                "progress": progress_data["progress"],
+                "subtitle": f"Question {progress_data['current']}/{progress_data['total']} • {progress_data['estimated_seconds_remaining']}s remaining",
+                "icon": "brain",
+                "color": "blue"
+            }
         else:
             return {
                 "status": "processing",
