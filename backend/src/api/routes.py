@@ -11,12 +11,66 @@ router = APIRouter()
 def get_projects():
     return storage.list_projects()
 
-@router.get("/requests/{request_id}")
-def get_request_status(request_id: str):
+@router.get("/requests/{request_id}/status")
+def get_request_status_user_friendly(request_id: str):
+    """Get user-friendly status with progress information and time estimates"""
     request = storage.get_request(request_id)
     if not request:
         raise HTTPException(status_code=404, detail="Request not found")
-    return request
+    
+    if request.status == RequestStatus.PENDING:
+        return {
+            "status": "queued",
+            "message": "Your request is queued and will start processing soon.",
+            "progress": 0,
+            "estimated_wait_time": "30 seconds"
+        }
+    elif request.status == RequestStatus.IN_PROGRESS:
+        if request.result and "progress" in request.result:
+            progress_data = request.result["progress"]
+        return {
+            "status": "processing",
+            "message": f"🤖 AI analyzing: '{progress_data['current_question'][:30]}...'",
+            "progress": progress_data["progress"],
+            "subtitle": f"Question {progress_data['current']}/{progress_data['total']} • {progress_data['estimated_seconds_remaining']}s remaining",
+            "icon": "brain",
+            "color": "blue"
+        }
+        else:
+            return {
+                "status": "processing",
+                "message": "AI analysis in progress...",
+                "progress": 50,
+                "estimated_time_remaining": "Unknown",
+                "current_question": "Initializing..."
+            }
+    elif request.status == RequestStatus.COMPLETED:
+        if request.result and "answers" in request.result:
+            answer_count = len(request.result["answers"])
+            return {
+                "status": "completed",
+                "message": f"🎉 Analysis complete! {answer_count} AI-powered answers ready.",
+                "progress": 100,
+                "subtitle": "All questions analyzed with confidence scores and citations",
+                "icon": "check-circle",
+                "color": "green",
+                "results_available": True,
+                "next_steps": "Review answers and provide manual responses where needed"
+            }
+        else:
+            return {
+                "status": "completed",
+                "message": "✅ Processing completed successfully.",
+                "progress": 100,
+                "results_available": True
+            }
+    else:  # FAILED
+        return {
+            "status": "failed",
+            "message": f"❌ Processing failed: {request.error or 'Unknown error'}",
+            "progress": 0,
+            "error_details": request.error
+        }
 
 @router.get("/requests")
 def get_requests():
@@ -97,7 +151,13 @@ def generate_single_answer(req: GenerateAnswerRequest):
 def generate_all_answers(project_id: str, background_tasks: BackgroundTasks):
     request_id = start_async_task("generate_all_answers", {"project_id": project_id})
     background_tasks.add_task(process_request_async, request_id)
-    return {"request_id": request_id}
+    return {
+        "request_id": request_id,
+        "message": "🚀 AI analysis started! Processing questions in optimized batches for faster results.",
+        "estimated_duration": "1-3 minutes for 37 questions (parallel processing)",
+        "what_happens_next": "Track progress at GET /requests/{request_id}/status. Questions are processed in batches of 3 concurrently.",
+        "performance_tips": "This is normal for AI-powered analysis. Each question requires document search + AI reasoning."
+    }
 
 @router.post("/update-project-async")
 def update_project_async(project_id: str, background_tasks: BackgroundTasks):

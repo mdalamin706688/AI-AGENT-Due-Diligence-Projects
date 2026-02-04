@@ -19,7 +19,17 @@ async def process_request(request: Request):
             
         elif request.type == "generate_all_answers":
             data = request.result or {}
-            answers = generate_all_answers(data["project_id"])
+            
+            def progress_callback(progress_data):
+                # Update request with progress information
+                request.result = {
+                    "status": "processing",
+                    "progress": progress_data,
+                    "partial_answers": []  # Could add partial results here
+                }
+                storage.save_request(request)
+            
+            answers = generate_all_answers(data["project_id"], progress_callback)
             request.result = {"answers": [a.dict() for a in answers]}
             
         elif request.type == "update_project":

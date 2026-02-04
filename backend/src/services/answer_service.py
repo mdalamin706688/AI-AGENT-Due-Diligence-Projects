@@ -6,6 +6,9 @@ import openai
 import os
 from typing import List
 from dotenv import load_dotenv
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+import time
 
 load_dotenv()
 
@@ -116,17 +119,49 @@ CONFIDENCE: [score]
     )
     return answer
 
-def generate_all_answers(project_id: str) -> List[Answer]:
-    """Generate answers for all questions in a project"""
+def generate_all_answers(project_id: str, progress_callback=None) -> List[Answer]:
+    """Generate answers for all questions in a project with progress tracking"""
     project = storage.get_project(project_id)
     if not project:
         return []
     
     answers = []
-    for question in project.questions:
-        answer = generate_answer(project_id, question.text)
-        answer.question_id = question.id
-        answers.append(answer)
+    total_questions = len(project.questions)
+    
+    # Process in batches of 3 to avoid overwhelming the API
+    batch_size = 3
+    
+    for i in range(0, total_questions, batch_size):
+        batch_questions = project.questions[i:i + batch_size]
+        batch_answers = []
+        
+        # Process batch concurrently
+        with ThreadPoolExecutor(max_workers=batch_size) as executor:
+            futures = []
+            for question in batch_questions:
+                future = executor.submit(generate_answer, project_id, question.text)
+                futures.append((future, question))
+            
+            for future, question in futures:
+                answer = future.result()
+                answer.question_id = question.id
+                batch_answers.append(answer)
+        
+        answers.extend(batch_answers)
+        
+        # Update progress
+        current_count = min(i + batch_size, total_questions)
+        if progress_callback:
+            progress = int((current_count / total_questions) * 100)
+            estimated_time_remaining = (total_questions - current_count) * 2  # Rough estimate: 2 seconds per question with batching
+            current_question_text = batch_questions[0].text[:50] + "..." if len(batch_questions[0].text) > 50 else batch_questions[0].text
+            progress_callback({
+                "current": current_count,
+                "total": total_questions,
+                "progress": progress,
+                "estimated_seconds_remaining": estimated_time_remaining,
+                "current_question": f"Processing batch: {current_question_text}"
+            })
     
     # Update project with answers
     project.answers = answers
