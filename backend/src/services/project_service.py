@@ -1,13 +1,13 @@
 from ..models import Project, ProjectStatus, Question
 from ..storage.memory import storage
 import uuid
-import PyPDF2
+from pypdf import PdfReader
 import re
 from typing import List
 import os
 
 def parse_questionnaire(file_path: str) -> List[Question]:
-    """Parse questions from the ILPA Due Diligence Questionnaire PDF"""
+    """Parse questions from the ILPA Due Diligence Questionnaire PDF or TXT"""
     questions = []
     
     # If it's just a filename, look in the data directory relative to this script
@@ -22,13 +22,19 @@ def parse_questionnaire(file_path: str) -> List[Question]:
     print(f"Looking for questionnaire at: {file_path}")
     
     try:
-        with open(file_path, 'rb') as f:
-            reader = PyPDF2.PdfReader(f)
-            text = ""
-            for page in reader.pages:
-                text += page.extract_text() + "\n"
+        if file_path.endswith('.txt'):
+            # Handle text files
+            with open(file_path, 'r') as f:
+                text = f.read()
+        else:
+            # Handle PDF files
+            with open(file_path, 'rb') as f:
+                reader = PdfReader(f)
+                text = ""
+                for page in reader.pages:
+                    text += page.extract_text() + "\n"
         
-        print(f"Extracted {len(text)} characters from PDF")
+        print(f"Extracted {len(text)} characters from file")
         
         # Extract questions using regex patterns
         # Look for numbered questions like "1.", "2.", etc.
