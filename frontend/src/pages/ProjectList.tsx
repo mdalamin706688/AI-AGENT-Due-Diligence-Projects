@@ -741,15 +741,29 @@ export default function ProjectList() {
             textAlign: 'center',
             py: 8,
             px: 4,
-            background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
-            border: '2px dashed',
-            borderColor: 'divider',
+            background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%)',
+            backdropFilter: 'blur(10px)',
+            border: '1px solid rgba(59, 130, 246, 0.2)',
+            borderRadius: 3,
+            position: 'relative',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
+            '&::before': {
+              content: '""',
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.3) 0%, rgba(59, 130, 246, 0.2) 100%)',
+              borderRadius: 'inherit',
+              pointerEvents: 'none',
+            }
           }}>
-            <FolderIcon sx={{ fontSize: 80, color: 'text.secondary', mb: 3, opacity: 0.6 }} />
-            <Typography variant="h5" color="text.secondary" gutterBottom sx={{ fontWeight: 600 }}>
+            <FolderIcon sx={{ fontSize: 80, color: '#ffffff', mb: 3, opacity: 0.8 }} />
+            <Typography variant="h5" sx={{ color: '#ffffff', fontWeight: 600, mb: 2 }}>
               {searchTerm ? 'No projects found' : 'No projects yet'}
             </Typography>
-            <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
+            <Typography variant="body1" sx={{ color: 'rgba(255, 255, 255, 0.8)', mb: 4 }}>
               {searchTerm
                 ? 'Try adjusting your search terms'
                 : 'Create your first due diligence project to get started'
@@ -761,18 +775,16 @@ export default function ProjectList() {
                 startIcon={<AddIcon />}
                 onClick={() => setCreateDialogOpen(true)}
                 sx={{
+                  background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%)',
+                  backdropFilter: 'blur(10px)',
+                  color: '#ffffff',
+                  border: '1px solid rgba(59, 130, 246, 0.2)',
                   borderRadius: 3,
-                  fontSize: '1rem',
                   px: 4,
                   py: 1.5,
-                  fontWeight: 700,
-                  letterSpacing: '0.02em',
-                  textTransform: 'none',
-                  background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
-                  color: '#ffffff',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  fontWeight: 600,
                   position: 'relative',
-                  boxShadow: '0 8px 32px rgba(59, 130, 246, 0.3)',
+                  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
                   '&::before': {
                     content: '""',
                     position: 'absolute',
@@ -780,24 +792,33 @@ export default function ProjectList() {
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, transparent 50%, rgba(255, 255, 255, 0.1) 100%)',
+                    background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.3) 0%, rgba(59, 130, 246, 0.2) 100%)',
                     borderRadius: 'inherit',
                     pointerEvents: 'none',
                   },
                   transition: 'all 0.3s ease',
                   '&:hover': {
                     transform: 'translateY(-2px)',
-                    background: 'linear-gradient(135deg, #5b21b6 0%, #7c3aed 100%)',
-                    color: '#ffffff',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
-                    boxShadow: '0 12px 40px rgba(99, 102, 241, 0.4)',
+                    background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(59, 130, 246, 0.1) 100%)',
+                    boxShadow: '0 12px 40px rgba(59, 130, 246, 0.2)',
                     '&::before': {
-                      background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, transparent 50%, rgba(255, 255, 255, 0.2) 100%)',
-                    },
+                      background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.4) 0%, rgba(59, 130, 246, 0.3) 100%)',
+                    }
                   },
-                  '&:not(:hover)': {
-                    transform: 'translateY(0)',
+                  '&:disabled': {
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    color: 'rgba(255, 255, 255, 0.5)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    transform: 'none',
+                    boxShadow: 'none',
+                    '&::before': {
+                      display: 'none',
+                    }
                   },
+                  '& .MuiButton-startIcon': {
+                    color: '#ffffff',
+                    opacity: 0.9,
+                  }
                 }}
               >
                 Create Project
@@ -1321,15 +1342,36 @@ export default function ProjectList() {
 
         {/* Floating Action Button for Mobile */}
         <Fab
-          color="primary"
           sx={{
             position: 'fixed',
             bottom: 24,
             right: 24,
             display: { xs: 'flex', md: 'none' },
-            background: 'linear-gradient(135deg, #1a365d 0%, #2d3748 100%)',
+            background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%)',
+            backdropFilter: 'blur(10px)',
+            color: '#ffffff',
+            border: '1px solid rgba(59, 130, 246, 0.2)',
+            position: 'relative',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
+            '&::before': {
+              content: '""',
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.3) 0%, rgba(59, 130, 246, 0.2) 100%)',
+              borderRadius: 'inherit',
+              pointerEvents: 'none',
+            },
+            transition: 'all 0.3s ease',
             '&:hover': {
-              background: 'linear-gradient(135deg, #0f1419 0%, #1a365d 100%)',
+              transform: 'translateY(-2px)',
+              background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(59, 130, 246, 0.1) 100%)',
+              boxShadow: '0 12px 40px rgba(59, 130, 246, 0.2)',
+              '&::before': {
+                background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.4) 0%, rgba(59, 130, 246, 0.3) 100%)',
+              }
             }
           }}
           onClick={() => setCreateDialogOpen(true)}
