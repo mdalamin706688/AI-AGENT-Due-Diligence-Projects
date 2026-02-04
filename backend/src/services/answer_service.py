@@ -99,13 +99,20 @@ CONFIDENCE: [score]
         citations = [Citation(document_id="doc1", chunk_id="chunk1", text="Sample citation from document")]
         confidence_score = 0.7
     
+    # Check if the answer indicates missing data
+    if "no relevant information" in answer_text.lower() or confidence_score < 0.3:
+        status = AnswerStatus.MISSING_DATA
+        confidence_score = 0.0
+    else:
+        status = AnswerStatus.GENERATED
+    
     answer = Answer(
         id=str(uuid.uuid4()),
         question_id="",  # Will be set by caller
         answer_text=answer_text,
         citations=citations,
         confidence_score=confidence_score,
-        status=AnswerStatus.GENERATED
+        status=status
     )
     return answer
 
