@@ -37,24 +37,34 @@ def parse_questionnaire(file_path: str) -> List[Question]:
         print(f"Extracted {len(text)} characters from file")
         
         # Extract questions using regex patterns
-        # Look for numbered questions like "1.", "2.", etc.
-        question_pattern = r'(\d+)\.\s*([^\n]+)'
-        matches = re.findall(question_pattern, text)
+        # Look for numbered questions like "1.1", "2.0", etc.
+        question_pattern = r'(\d+\.\d+)\s+(.+?)(?=\d+\.\d+|\n\n|\n$|$)'
+        matches = re.findall(question_pattern, text, re.DOTALL)
         
         print(f"Found {len(matches)} potential question matches")
+        print("First 5 matches:", matches[:5])
         
         order = 1
-        for match in matches[:20]:  # Limit to first 20 questions for demo
-            question_text = match[1].strip()
-            if len(question_text) > 10:  # Filter out very short matches
-                # Determine section based on content
+        for match in matches[:50]:  # Limit to first 50 questions
+            question_text = match[1].strip().replace('\n', ' ')
+            if len(question_text) > 20 and ('?' in question_text or question_text.startswith(('Does', 'Has', 'What', 'Is', 'Are', 'How', 'Why', 'When', 'Where', 'Who'))):
+                # Skip headers like "Firm: General Information"
+                if ':' in question_text and not question_text.startswith(('Does', 'Has', 'What', 'Is', 'Are', 'How', 'Why', 'When', 'Where', 'Who')):
+                    continue
+                # Remove the ☐ ☐ at the end
+                question_text = re.sub(r'\s*☐\s*☐\s*$', '', question_text)
+                # Determine section based on content or number
                 section = "General"
-                if any(word in question_text.lower() for word in ['financial', 'revenue', 'profit', 'balance']):
+                if 'financial' in question_text.lower() or 'valuation' in question_text.lower() or 'accounting' in question_text.lower() or 'reporting' in question_text.lower():
                     section = "Financial"
-                elif any(word in question_text.lower() for word in ['legal', 'lawsuit', 'litigation', 'contract']):
+                elif 'legal' in question_text.lower() or 'litigation' in question_text.lower() or 'contract' in question_text.lower() or 'administration' in question_text.lower():
                     section = "Legal"
-                elif any(word in question_text.lower() for word in ['operation', 'business', 'market']):
+                elif 'operation' in question_text.lower() or 'business' in question_text.lower() or 'market' in question_text.lower() or 'team' in question_text.lower() or 'fund terms' in question_text.lower():
                     section = "Operations"
+                elif 'governance' in question_text.lower() or 'risk' in question_text.lower() or 'compliance' in question_text.lower():
+                    section = "Governance"
+                elif 'esg' in question_text.lower() or 'environmental' in question_text.lower() or 'social' in question_text.lower() or 'diversity' in question_text.lower() or 'inclusion' in question_text.lower():
+                    section = "ESG"
                 
                 questions.append(Question(
                     id=str(uuid.uuid4()),
