@@ -21,20 +21,13 @@ def generate_answer(project_id: str, question_text: str) -> Answer:
     # Search for relevant document chunks
     relevant_chunks = indexer.search(question_text, k=3)
     
-    if not relevant_chunks:
-        # No relevant documents found
-        answer = Answer(
-            id=str(uuid.uuid4()),
-            question_id="",  # Will be set by caller
-            answer_text="No relevant information found in the provided documents.",
-            citations=[],
-            confidence_score=0.0,
-            status=AnswerStatus.MISSING_DATA
-        )
-        return answer
-    
     # Prepare context from relevant chunks
-    context = "\n\n".join([chunk.page_content for chunk in relevant_chunks])
+    if relevant_chunks:
+        context = "\n\n".join([chunk.page_content for chunk in relevant_chunks])
+    else:
+        context = "No relevant document excerpts found for this question."
+    
+    # Create prompt for OpenRouter
     
     # Create prompt for OpenAI
     prompt = f"""
