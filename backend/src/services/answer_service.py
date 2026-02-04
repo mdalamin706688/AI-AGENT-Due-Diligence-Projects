@@ -63,9 +63,9 @@ CONFIDENCE: [score]
         print(f"AI Response: {ai_response}")  # Debug: print the raw response
         
         # Parse the response
-        answer_text = "Unable to parse AI response"
+        answer_text = ai_response.strip()  # Default to full response
         citations = []
-        confidence_score = 0.5
+        confidence_score = 0.5  # Default confidence
         
         lines = ai_response.split('\n')
         current_section = None
