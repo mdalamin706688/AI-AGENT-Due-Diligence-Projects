@@ -47,9 +47,16 @@ def parse_questionnaire(file_path: str) -> List[Question]:
         print(f"Extracted {len(text)} characters from file")
         
         # Extract questions using regex patterns
-        # Look for numbered questions like "1.1", "2.0", etc.
-        question_pattern = r'(\d+\.\d+)\s+(.+?)(?=\d+\.\d+|\n\n|\n$|$)'
-        matches = re.findall(question_pattern, text, re.DOTALL)
+        # Look for numbered questions like "1.1", "2.0", or simple "1.", "2." etc.
+        # Try the detailed format first (1.1, 2.0), then fallback to simple numbering (1., 2.)
+        question_pattern_detailed = r'(\d+\.\d+)\s+(.+?)(?=\d+\.\d+|\n\n|\n$|$)'
+        question_pattern_simple = r'(\d+)\.\s+(.+)'
+        
+        matches = re.findall(question_pattern_detailed, text, re.DOTALL)
+        
+        if not matches:
+            # Try simple numbering format
+            matches = re.findall(question_pattern_simple, text)
         
         print(f"Found {len(matches)} potential question matches")
         print("First 5 matches:", matches[:5])
@@ -57,7 +64,7 @@ def parse_questionnaire(file_path: str) -> List[Question]:
         order = 1
         for match in matches[:50]:  # Limit to first 50 questions
             question_text = match[1].strip().replace('\n', ' ')
-            if len(question_text) > 20 and ('?' in question_text or question_text.startswith(('Does', 'Has', 'What', 'Is', 'Are', 'How', 'Why', 'When', 'Where', 'Who'))):
+            if len(question_text) > 10 and ('?' in question_text or question_text.startswith(('Does', 'Has', 'What', 'Is', 'Are', 'How', 'Why', 'When', 'Where', 'Who'))):
                 # Skip headers like "Firm: General Information"
                 if ':' in question_text and not question_text.startswith(('Does', 'Has', 'What', 'Is', 'Are', 'How', 'Why', 'When', 'Where', 'Who')):
                     continue
@@ -98,7 +105,9 @@ def parse_questionnaire(file_path: str) -> List[Question]:
     return questions
 
 def create_project(name: str, questionnaire_file: str, scope: str) -> Project:
+    print(f"Creating project: {name}, questionnaire: {questionnaire_file}, scope: {scope}")
     questions = parse_questionnaire(questionnaire_file)
+    print(f"Parsed {len(questions)} questions")
     project = Project(
         id=str(uuid.uuid4()),
         name=name,
@@ -109,6 +118,7 @@ def create_project(name: str, questionnaire_file: str, scope: str) -> Project:
         documents=[]
     )
     storage.save_project(project)
+    print(f"Project created and saved: {project.id}")
     return project
 
 def get_project(project_id: str) -> Optional[Project]:

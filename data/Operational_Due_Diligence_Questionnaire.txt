@@ -1,0 +1,31 @@
+OPERATIONAL DUE DILIGENCE QUESTIONNAIRE
+
+3.1 Operations Overview
+How does the company operate day-to-day?
+
+3.2 Technology Infrastructure
+What technology systems and infrastructure does the company use?
+
+3.3 Supply Chain Management
+How does the company manage its supply chain?
+
+3.4 Quality Control
+What quality control processes are in place?
+
+3.5 Manufacturing Processes
+What are the key manufacturing or production processes?
+
+3.6 IT Security
+What cybersecurity measures are implemented?
+
+3.7 Data Management
+How does the company manage and protect its data?
+
+3.8 Scalability
+Can the company's operations scale effectively?
+
+3.9 Key Suppliers
+Who are the critical suppliers and vendor relationships?
+
+3.10 Operational Risks
+What are the main operational risks and mitigation strategies?

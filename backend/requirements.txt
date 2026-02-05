@@ -2,7 +2,7 @@ fastapi
 uvicorn[standard]
 pydantic
 langchain
-openai
+requests
 faiss-cpu
 pypdf
 PyMuPDF
@@ -11,3 +11,6 @@ python-multipart
 sqlalchemy
 aiosqlite
 python-dotenv
+python-docx
+openpyxl
+python-pptx

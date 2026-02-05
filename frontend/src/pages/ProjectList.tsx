@@ -78,6 +78,7 @@ export default function ProjectList() {
   const [refreshing, setRefreshing] = useState(false);
   const [indexingProjectId, setIndexingProjectId] = useState<string | null>(null);
   const [indexingProgress, setIndexingProgress] = useState(0);
+  const [generationProgress, setGenerationProgress] = useState(0);
   const [nameFieldFocused, setNameFieldFocused] = useState(false);
 
   useEffect(() => {
@@ -129,33 +130,22 @@ export default function ProjectList() {
       formData.append('scope', scope);
       formData.append('questionnaire_file', questionnaireFile);
 
-      const response = await fetch('http://localhost:8000/create-project-with-upload-async', {
+      const response = await fetch('http://localhost:8000/create-project-with-upload', {
         method: 'POST',
         body: formData,
       });
 
       const result = await response.json();
-      if (result.request_id) {
-        setSuccess('Project creation started...');
+      if (result.project_id) {
+        setSuccess('Project created successfully!');
         
-        // Add a temporary project with PROCESSING status
-        const tempProject = {
-          id: result.request_id, // Use request_id as temporary ID
-          name: name,
-          status: 'PROCESSING',
-          scope: scope,
-          questions: [],
-          answers: [],
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        };
-        setProjects(prev => [tempProject, ...prev]);
+        // Fetch updated project list
+        fetchProjects();
         
         setCreateDialogOpen(false);
         setName('');
         setQuestionnaireFile(null);
         setScope('ALL_DOCS');
-        pollRequestStatus(result.request_id);
       } else {
         setError('Failed to create project');
       }
@@ -225,6 +215,7 @@ export default function ProjectList() {
     setLoading(true);
     setError(null);
     setSuccess(null);
+    setGenerationProgress(0);
 
     // Update project status to PROCESSING
     setProjects(prevProjects =>
@@ -236,25 +227,67 @@ export default function ProjectList() {
     );
 
     try {
-      const response = await fetch(`http://localhost:8000/generate-all-answers?project_id=${projectId}`, {
-        method: 'POST'
-      });
+      const eventSource = new EventSource(`http://localhost:8000/stream-answers/${projectId}`);
 
-      const result = await response.json();
-      if (result.request_id) {
-        setSuccess('Answer generation started...');
-        pollRequestStatus(result.request_id, 'generate');
-      } else {
-        setError('Failed to start answer generation');
-        // Revert status back if failed
+      eventSource.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        if (data.type === 'progress') {
+          setGenerationProgress(data.progress);
+          setSuccess(`Generating answers... ${data.current}/${data.total} completed`);
+        } else if (data.type === 'answer') {
+          // Update the project with the new answer
+          setProjects(prevProjects =>
+            prevProjects.map(project =>
+              project.id === projectId
+                ? {
+                    ...project,
+                    answers: project.answers ? [...project.answers, data.answer] : [data.answer]
+                  }
+                : project
+            )
+          );
+        } else if (data.type === 'completed') {
+          setSuccess('Answer generation completed!');
+          setGenerationProgress(100);
+          setProjects(prevProjects =>
+            prevProjects.map(project =>
+              project.id === projectId
+                ? { ...project, status: 'COMPLETED' }
+                : project
+            )
+          );
+          eventSource.close();
+          setTimeout(() => {
+            setSuccess(null);
+            setGenerationProgress(0);
+          }, 3000);
+        } else if (data.type === 'error') {
+          setError(data.message || 'Failed to generate answers');
+          setProjects(prevProjects =>
+            prevProjects.map(project =>
+              project.id === projectId
+                ? { ...project, status: 'INDEXED' }
+                : project
+            )
+          );
+          eventSource.close();
+        }
+      };
+
+      eventSource.onerror = (error) => {
+        console.error('EventSource error:', error);
+        setError('Connection lost during answer generation');
         setProjects(prevProjects =>
           prevProjects.map(project =>
             project.id === projectId
-              ? { ...project, status: project.status === 'PROCESSING' ? 'INDEXED' : project.status }
+              ? { ...project, status: 'INDEXED' }
               : project
           )
         );
-      }
+        eventSource.close();
+      };
+
     } catch (error) {
       console.error('Error generating answers:', error);
       setError('Failed to start answer generation');
@@ -277,7 +310,7 @@ export default function ProjectList() {
         const response = await fetch(`http://localhost:8000/requests/${requestId}`);
         const result = await response.json();
 
-        if (result.status === 'COMPLETED') {
+        if (result.status === 'completed') {
           if (type === 'indexing') {
             setSuccess('Document indexing completed!');
             setIndexingProjectId(null);
@@ -290,11 +323,18 @@ export default function ProjectList() {
             setSuccess('Answer generation completed!');
             setTimeout(() => setSuccess(null), 3000);
           } else {
+            // Project creation completed
             setSuccess('Project created successfully!');
             setTimeout(() => setSuccess(null), 3000);
+            
+            // If we have a project_id, replace the temporary project
+            if (result.project_id) {
+              // Remove the temporary project and fetch the real projects
+              setProjects(prev => prev.filter(p => p.id !== requestId));
+            }
           }
           fetchProjects();
-        } else if (result.status === 'FAILED') {
+        } else if (result.status === 'failed') {
           if (type === 'indexing') {
             setError('Document indexing failed');
             setIndexingProjectId(null);
@@ -879,7 +919,7 @@ export default function ProjectList() {
                         <BusinessIcon sx={{ fontSize: 28, color: '#ffffff' }} />
                       </Avatar>
                       <Chip
-                        label={`${getStatusIcon(project.status)} ${project.status}`}
+                        label={`${getStatusIcon(project.status)} ${project.status === 'OUTDATED' ? 'OUTDATED - Re-index needed' : project.status}`}
                         color={getStatusColor(project.status) as any}
                         size="small"
                         variant="filled"
@@ -908,6 +948,12 @@ export default function ProjectList() {
                       {project.scope || 'Full due diligence assessment'}
                     </Typography>
 
+                    {project.status === 'OUTDATED' && (
+                      <Alert severity="warning" sx={{ mb: 2, borderRadius: 2, fontSize: '0.75rem' }}>
+                        ⚠️ New documents added - re-indexing required for latest answers
+                      </Alert>
+                    )}
+
                     <Box sx={{ mb: 2 }}>
                       {indexingProjectId === project.id ? (
                         <Box>
@@ -926,6 +972,25 @@ export default function ProjectList() {
                                 background: indexingProgress === 100 
                                   ? 'linear-gradient(90deg, #10b981 0%, #059669 100%)'
                                   : 'linear-gradient(90deg, #3b82f6 0%, #2563eb 100%)',
+                              }
+                            }}
+                          />
+                        </Box>
+                      ) : project.status === 'PROCESSING' && generationProgress > 0 ? (
+                        <Box>
+                          <Typography variant="caption" sx={{ color: 'text.secondary', mb: 1, display: 'block' }}>
+                            Generating answers...
+                          </Typography>
+                          <LinearProgress
+                            variant="determinate"
+                            value={generationProgress}
+                            sx={{
+                              height: 6,
+                              borderRadius: 3,
+                              backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                              '& .MuiLinearProgress-bar': {
+                                borderRadius: 3,
+                                background: 'linear-gradient(90deg, #f59e0b 0%, #d97706 100%)',
                               }
                             }}
                           />
@@ -1016,21 +1081,29 @@ export default function ProjectList() {
                       View Details
                     </Button>
 
-                    {(project.status === 'CREATED' || project.status === 'READY') && (
-                      <Tooltip title="Index documents">
+                    {(project.status === 'CREATED' || project.status === 'READY' || project.status === 'OUTDATED') && project.scope === 'ALL_DOCS' && (
+                      <Tooltip title={project.status === 'OUTDATED' ? "Re-index all documents (new documents added)" : "Index all documents"}>
                         <IconButton
                           onClick={() => indexProject(project.id)}
                           disabled={loading}
                           sx={{
-                            background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
+                            background: project.status === 'OUTDATED' 
+                              ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'
+                              : 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
                             color: '#ffffff',
                             borderRadius: 3,
-                            boxShadow: '0 4px 12px rgba(59, 130, 246, 0.3)',
+                            boxShadow: project.status === 'OUTDATED'
+                              ? '0 4px 12px rgba(239, 68, 68, 0.3)'
+                              : '0 4px 12px rgba(59, 130, 246, 0.3)',
                             border: '1px solid rgba(255, 255, 255, 0.1)',
                             '&:hover': {
-                              background: 'linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%)',
+                              background: project.status === 'OUTDATED'
+                                ? 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)'
+                                : 'linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%)',
                               transform: 'translateY(-2px)',
-                              boxShadow: '0 8px 25px rgba(59, 130, 246, 0.4)',
+                              boxShadow: project.status === 'OUTDATED'
+                                ? '0 8px 25px rgba(239, 68, 68, 0.4)'
+                                : '0 8px 25px rgba(59, 130, 246, 0.4)',
                             },
                             '&:not(:hover)': {
                               transform: 'translateY(0)',
@@ -1041,7 +1114,7 @@ export default function ProjectList() {
                             }
                           }}
                         >
-                          <AssessmentIcon />
+                          <UpdateIcon />
                         </IconButton>
                       </Tooltip>
                     )}
@@ -1180,7 +1253,7 @@ export default function ProjectList() {
               
               <Box>
                 <input
-                  accept=".pdf"
+                  accept=".pdf,.txt"
                   style={{ display: 'none' }}
                   id="questionnaire-upload"
                   type="file"
@@ -1202,7 +1275,7 @@ export default function ProjectList() {
                       }
                     }}
                   >
-                    {questionnaireFile ? `Selected: ${questionnaireFile.name}` : 'Choose Questionnaire PDF'}
+                    {questionnaireFile ? `Selected: ${questionnaireFile.name}` : 'Choose Questionnaire (PDF/TXT)'}
                   </Button>
                 </label>
                 <Typography variant="body2" sx={{ 
@@ -1210,7 +1283,7 @@ export default function ProjectList() {
                   mt: 1,
                   textAlign: 'center'
                 }}>
-                  Upload a PDF questionnaire file to create your project
+                  Upload a PDF or TXT questionnaire file to create your project
                 </Typography>
               </Box>
             </Box>

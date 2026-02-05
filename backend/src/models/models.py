@@ -84,3 +84,24 @@ class UpdateAnswerRequest(BaseModel):
 class IndexDocumentRequest(BaseModel):
     filename: str
     content: bytes
+
+class GroundTruthAnswer(BaseModel):
+    id: str
+    question_id: str
+    answer_text: str
+    source: str  # e.g., "human_expert", "official_document"
+
+class EvaluationResult(BaseModel):
+    id: str
+    project_id: str
+    question_id: str
+    ai_answer: str
+    ground_truth_answer: str
+    accuracy_score: float  # 0-1 scale
+    citation_quality_score: float  # 0-1 scale
+    confidence_correlation_score: float  # 0-1 scale
+    overall_score: float  # 0-1 scale
+    evaluation_details: Dict[str, Any]  # Additional metrics/details
+
+class EvaluateProjectRequest(BaseModel):
+    project_id: str

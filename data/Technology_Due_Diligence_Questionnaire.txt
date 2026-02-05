@@ -1,0 +1,31 @@
+TECHNOLOGY DUE DILIGENCE QUESTIONNAIRE
+
+7.1 Technology Stack
+What technology platforms and tools does the company use?
+
+7.2 Software Architecture
+How is the company's software architecture designed?
+
+7.3 Development Process
+What development methodologies and processes are used?
+
+7.4 Code Quality
+What measures ensure code quality and security?
+
+7.5 Scalability
+How scalable is the company's technology infrastructure?
+
+7.6 Data Architecture
+How is data stored, processed, and analyzed?
+
+7.7 API and Integrations
+What APIs and third-party integrations exist?
+
+7.8 Technology Roadmap
+What is the company's technology development roadmap?
+
+7.9 Technical Debt
+What technical debt exists and mitigation plans?
+
+7.10 Innovation Pipeline
+What new technologies or features are in development?

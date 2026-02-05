@@ -6,6 +6,7 @@ import Layout from './components/Layout';
 import ProjectList from './pages/ProjectList';
 import ProjectDetail from './pages/ProjectDetail';
 import QuestionReview from './pages/QuestionReview';
+import EvaluationResults from './pages/EvaluationResults';
 import theme from './theme';
 
 export default function App() {
@@ -21,6 +22,7 @@ export default function App() {
             <Route path="/" element={<ProjectList />} />
             <Route path="/project/:id" element={<ProjectDetail />} />
             <Route path="/review/:projectId/:questionId" element={<QuestionReview />} />
+            <Route path="/evaluation/:projectId" element={<EvaluationResults />} />
           </Routes>
         </Layout>
       </Router>

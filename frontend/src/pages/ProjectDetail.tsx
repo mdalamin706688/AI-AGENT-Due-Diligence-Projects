@@ -21,6 +21,12 @@ import {
   Input,
   Pagination,
   Stack,
+  Checkbox,
+  FormControlLabel,
+  List,
+  ListItem,
+  ListItemIcon,
+  ListItemText,
 } from '@mui/material';
 import {
   ExpandMore as ExpandMoreIcon,
@@ -65,6 +71,7 @@ interface Project {
   status: string;
   questions: Question[];
   answers: Answer[];
+  documents: { id: string; filename: string }[];
 }
 
 export default function ProjectDetail() {
@@ -78,10 +85,14 @@ export default function ProjectDetail() {
   const [indexingProgress, setIndexingProgress] = useState(0);
   const [reindexing, setReindexing] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [generationProgress, setGenerationProgress] = useState({ current: 0, total: 0, message: '' });
+  const [availableFiles, setAvailableFiles] = useState<string[]>([]);
+  const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
   const questionsPerPage = 1;
 
   useEffect(() => {
     fetchProject();
+    fetchAvailableFiles();
   }, [id]);
 
   useEffect(() => {
@@ -90,12 +101,34 @@ export default function ProjectDetail() {
   }, [project?.id]);
 
   const fetchProject = () => {
+    console.log('Fetching project data...');
     fetch(`http://localhost:8000/get-project-info?project_id=${id}`)
-      .then(res => res.json())
-      .then(setProject)
+      .then(res => {
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        }
+        return res.json();
+      })
+      .then(data => {
+        console.log('Received project data:', data);
+        console.log('Documents in project:', data.documents);
+        console.log('Document filenames:', data.documents?.map(d => d.filename));
+        // Ensure we create a new object reference to trigger re-render
+        setProject({ ...data });
+      })
       .catch(err => {
         console.error('Error fetching project:', err);
         setError('Failed to load project details');
+        setProject(null);
+      });
+  };
+
+  const fetchAvailableFiles = () => {
+    fetch('http://localhost:8000/get-available-files')
+      .then(res => res.json())
+      .then(data => setAvailableFiles(data.files || []))
+      .catch(err => {
+        console.error('Error fetching available files:', err);
       });
   };
 
@@ -105,23 +138,70 @@ export default function ProjectDetail() {
     setLoading(true);
     setError(null);
     setSuccess(null);
+    setGenerationProgress({ current: 0, total: 0, message: 'Starting AI analysis...' });
 
     try {
-      const response = await fetch(`http://localhost:8000/generate-all-answers?project_id=${project.id}`, {
-        method: 'POST'
-      });
+      const eventSource = new EventSource(`http://localhost:8000/stream-answers/${project.id}`);
 
-      const result = await response.json();
-      if (result.request_id) {
-        setSuccess('Answer generation started...');
-        pollRequestStatus(result.request_id);
-      } else {
-        setError('Failed to start answer generation');
+      eventSource.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        if (data.type === 'progress') {
+          setGenerationProgress({
+            current: data.current,
+            total: data.total,
+            message: data.message || `Processing ${data.current} of ${data.total} questions...`
+          });
+        } else if (data.type === 'answer') {
+          // Add the new answer to the project
+          setProject(prev => {
+            if (!prev) return prev;
+            const updatedAnswers = [...(prev.answers || [])];
+            const existingIndex = updatedAnswers.findIndex(a => a.question_id === data.question_id);
+
+            const newAnswer = {
+              id: data.question_id, // Use question_id as answer id for now
+              question_id: data.question_id,
+              answer_text: data.answer_text,
+              citations: data.citations || [],
+              confidence_score: data.confidence_score,
+              status: data.status,
+              manual_answer: null
+            };
+
+            if (existingIndex >= 0) {
+              updatedAnswers[existingIndex] = newAnswer;
+            } else {
+              updatedAnswers.push(newAnswer);
+            }
+
+            return {
+              ...prev,
+              answers: updatedAnswers
+            };
+          });
+        } else if (data.type === 'complete') {
+          setSuccess(`✅ Analysis complete! ${data.total_answers} AI-powered answers ready.`);
+          setLoading(false);
+          setGenerationProgress({ current: 0, total: 0, message: '' });
+          eventSource.close();
+        } else if (data.error) {
+          setError(`Generation failed: ${data.error}`);
+          setLoading(false);
+          eventSource.close();
+        }
+      };
+
+      eventSource.onerror = (error) => {
+        console.error('EventSource error:', error);
+        setError('Connection lost during answer generation');
         setLoading(false);
-      }
+        eventSource.close();
+      };
+
     } catch (error) {
-      console.error('Error generating answers:', error);
-      setError('Failed to generate answers');
+      console.error('Error starting answer generation:', error);
+      setError('Failed to start answer generation');
       setLoading(false);
     }
   };
@@ -132,12 +212,12 @@ export default function ProjectDetail() {
         const response = await fetch(`http://localhost:8000/requests/${requestId}`);
         const status = await response.json();
 
-        if (status.status === 'COMPLETED') {
+        if (status.status === 'completed') {
           setLoading(false);
           setSuccess('Answers generated successfully!');
           fetchProject();
           setTimeout(() => setSuccess(null), 3000);
-        } else if (status.status === 'FAILED') {
+        } else if (status.status === 'failed') {
           setLoading(false);
           setError('Answer generation failed: ' + status.error);
         } else {
@@ -152,11 +232,78 @@ export default function ProjectDetail() {
     poll();
   };
 
+  const indexSelectedDocuments = async () => {
+    if (selectedDocuments.length === 0 || !project) return;
+
+    setUploading(true);
+    setIndexingProgress(0);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      // Index each selected document
+      for (const filename of selectedDocuments) {
+        const formData = new FormData();
+        formData.append('filename', filename);
+
+        const response = await fetch(`http://localhost:8000/index-document-async?project_id=${project.id}`, {
+          method: 'POST',
+          body: formData
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to index ${filename}`);
+        }
+
+        const result = await response.json();
+        if (result.request_id) {
+          // Wait for each document to be indexed
+          await new Promise((resolve) => {
+            const poll = async () => {
+              const statusRes = await fetch(`http://localhost:8000/requests/${result.request_id}`);
+              const status = await statusRes.json();
+              if (status.status === 'completed') {
+                resolve(void 0);
+              } else if (status.status === 'failed') {
+                throw new Error(`Indexing failed for ${filename}`);
+              } else {
+                setTimeout(poll, 5000); // Increase polling interval to 5 seconds
+              }
+            };
+            poll();
+          });
+        }
+      }
+
+      setSuccess(`${selectedDocuments.length} document(s) indexed successfully!`);
+      setSelectedDocuments([]);
+      
+      // Optimistically update the project state to show indexed documents immediately
+      setProject(prev => {
+        if (!prev) return prev;
+        // For now, we'll just refresh from server since we don't have the document IDs yet
+        // In a more sophisticated implementation, we could track the document IDs
+        return prev;
+      });
+      
+      // Wait a moment for backend to fully process, then refresh project data
+      setTimeout(() => {
+        fetchProject();
+      }, 1000);
+    } catch (error) {
+      console.error('Error indexing documents:', error);
+      setError('Failed to index selected documents');
+    } finally {
+      setUploading(false);
+      setIndexingProgress(100);
+    }
+  };
+
   const uploadDocument = async () => {
     if (!selectedFile || !project) return;
 
     setUploading(true);
-    setIndexingProgress(0); // Start with indeterminate progress
+    setIndexingProgress(0);
     setError(null);
     setSuccess(null);
 
@@ -164,19 +311,18 @@ export default function ProjectDetail() {
       const formData = new FormData();
       formData.append('file', selectedFile);
 
-      const response = await fetch('http://localhost:8000/index-document-async', {
+      const response = await fetch(`http://localhost:8000/index-document-async?project_id=${project.id}`, {
         method: 'POST',
-        body: formData,
+        body: formData
       });
+
+      if (!response.ok) {
+        throw new Error('Failed to upload document');
+      }
 
       const result = await response.json();
       if (result.request_id) {
-        setSuccess('Document upload started...');
         pollUploadStatus(result.request_id);
-      } else {
-        setError('Failed to start document upload');
-        setUploading(false);
-        setIndexingProgress(0);
       }
     } catch (error) {
       console.error('Error uploading document:', error);
@@ -192,18 +338,18 @@ export default function ProjectDetail() {
         const response = await fetch(`http://localhost:8000/requests/${requestId}`);
         const status = await response.json();
 
-        if (status.status === 'COMPLETED') {
+        if (status.status === 'completed') {
           setUploading(false);
           setIndexingProgress(100);
           setSuccess('Document indexed successfully!');
           setSelectedFile(null);
-          // After successful upload, trigger project update to re-index
-          updateProjectAsync();
+          // Refresh project data after successful indexing
+          fetchProject();
           setTimeout(() => {
             setSuccess(null);
             setIndexingProgress(0);
           }, 3000);
-        } else if (status.status === 'FAILED') {
+        } else if (status.status === 'failed') {
           setUploading(false);
           setIndexingProgress(0);
           setError('Document indexing failed: ' + status.error);
@@ -250,10 +396,10 @@ export default function ProjectDetail() {
         const response = await fetch(`http://localhost:8000/requests/${requestId}`);
         const status = await response.json();
 
-        if (status.status === 'COMPLETED') {
+        if (status.status === 'completed') {
           setReindexing(false);
           fetchProject(); // Refresh project data
-        } else if (status.status === 'FAILED') {
+        } else if (status.status === 'failed') {
           console.error('Project update failed:', status.error);
           setReindexing(false);
         } else {
@@ -299,20 +445,20 @@ export default function ProjectDetail() {
   }
 
   // Group questions by section
-  const questionsBySection = project.questions.reduce((acc, q) => {
+  const questionsBySection = project?.questions?.reduce((acc, q) => {
     if (!acc[q.section]) acc[q.section] = [];
     acc[q.section].push(q);
     return acc;
-  }, {} as Record<string, Question[]>);
+  }, {} as Record<string, Question[]>) || {};
 
   // Create answer map
-  const answerMap = project.answers.reduce((acc, a) => {
+  const answerMap = project?.answers?.reduce((acc, a) => {
     acc[a.question_id] = a;
     return acc;
   }, {} as Record<string, Answer>);
 
-  const answeredQuestions = project.questions.filter(q => answerMap[q.id]).length;
-  const totalQuestions = project.questions.length;
+  const answeredQuestions = project?.questions?.filter(q => answerMap[q.id]).length || 0;
+  const totalQuestions = project?.questions?.length || 0;
   const progress = totalQuestions > 0 ? (answeredQuestions / totalQuestions) * 100 : 0;
 
   return (
@@ -372,7 +518,7 @@ export default function ProjectDetail() {
         <Box display="flex" gap={2} alignItems="center">
           <Box sx={{ position: 'relative' }}>
             <input
-              accept=".pdf"
+              accept=".pdf,.txt"
               style={{ display: 'none' }}
               id="document-upload"
               type="file"
@@ -407,7 +553,7 @@ export default function ProjectDetail() {
                   }
                 }}
               >
-                {selectedFile ? `Selected: ${selectedFile.name.length > 25 ? selectedFile.name.substring(0, 25) + '...' : selectedFile.name}` : 'Choose Document PDF'}
+                {selectedFile ? `Selected: ${selectedFile.name.length > 25 ? selectedFile.name.substring(0, 25) + '...' : selectedFile.name}` : 'Choose Document (PDF/TXT)'}
               </Button>
             </label>
           </Box>
@@ -567,8 +713,282 @@ export default function ProjectDetail() {
           >
             {loading ? 'Generating Answers...' : 'Generate All Answers'}
           </Button>
+
+          <Button
+            component={Link}
+            to={`/evaluation/${project.id}`}
+            variant="contained"
+            startIcon={<AssessmentIcon />}
+            size="large"
+            sx={{
+              background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.1) 0%, rgba(168, 85, 247, 0.05) 100%)',
+              backdropFilter: 'blur(10px)',
+              color: '#ffffff',
+              border: '1px solid rgba(168, 85, 247, 0.2)',
+              borderRadius: 3,
+              px: 4,
+              py: 1.5,
+              fontWeight: 600,
+              fontSize: '0.95rem',
+              position: 'relative',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
+              '&::before': {
+                content: '""',
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.3) 0%, rgba(168, 85, 247, 0.2) 100%)',
+                borderRadius: 'inherit',
+                pointerEvents: 'none',
+              },
+              transition: 'all 0.3s ease',
+              '&:hover': {
+                transform: 'translateY(-2px)',
+                background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.15) 0%, rgba(168, 85, 247, 0.1) 100%)',
+                boxShadow: '0 12px 40px rgba(168, 85, 247, 0.2)',
+                '&::before': {
+                  background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.4) 0%, rgba(168, 85, 247, 0.3) 100%)',
+                }
+              },
+              '& .MuiButton-startIcon': {
+                color: '#ffffff',
+                opacity: 0.9,
+              }
+            }}
+          >
+            View Evaluation
+          </Button>
         </Box>
       </Box>
+
+      {/* Document Management Section */}
+      <Card sx={{
+        mb: 3,
+        background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%)',
+        backdropFilter: 'blur(10px)',
+        border: '1px solid rgba(255, 255, 255, 0.2)',
+        borderRadius: 3,
+        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
+      }}>
+        <CardContent>
+          {project?.scope === 'ALL_DOCS' ? (
+            // ALL_DOCS scope: Show index all button
+            <>
+              <Typography variant="h6" gutterBottom sx={{ color: '#ffffff', fontWeight: 600 }}>
+                Index All Documents
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>
+                Index all available documents for comprehensive analysis.
+              </Typography>
+              <Button
+                variant="contained"
+                onClick={updateProjectAsync}
+                disabled={reindexing}
+                startIcon={reindexing ? <CircularProgress size={20} /> : <AssessmentIcon />}
+                sx={{
+                  background: 'linear-gradient(135deg, rgba(132, 204, 22, 0.2) 0%, rgba(132, 204, 22, 0.1) 100%)',
+                  backdropFilter: 'blur(10px)',
+                  color: '#ffffff',
+                  border: '1px solid rgba(132, 204, 22, 0.3)',
+                  borderRadius: 3,
+                  px: 3,
+                  py: 1.5,
+                  fontWeight: 600,
+                  position: 'relative',
+                  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
+                  '&::before': {
+                    content: '""',
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'linear-gradient(135deg, rgba(132, 204, 22, 0.4) 0%, rgba(132, 204, 22, 0.3) 100%)',
+                    borderRadius: 'inherit',
+                    pointerEvents: 'none',
+                  },
+                  transition: 'all 0.3s ease',
+                  '&:hover': {
+                    transform: 'translateY(-2px)',
+                    background: 'linear-gradient(135deg, rgba(132, 204, 22, 0.25) 0%, rgba(132, 204, 22, 0.15) 100%)',
+                    boxShadow: '0 12px 40px rgba(132, 204, 22, 0.3)',
+                    '&::before': {
+                      background: 'linear-gradient(135deg, rgba(132, 204, 22, 0.5) 0%, rgba(132, 204, 22, 0.4) 100%)',
+                    }
+                  },
+                  '&:disabled': {
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    color: 'rgba(255, 255, 255, 0.5)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    transform: 'none',
+                    boxShadow: 'none',
+                    '&::before': {
+                      display: 'none',
+                    }
+                  },
+                  '& .MuiButton-startIcon': {
+                    color: '#ffffff',
+                    opacity: 0.9,
+                  }
+                }}
+              >
+                {reindexing ? 'Indexing All Documents...' : 'Index All Documents'}
+              </Button>
+            </>
+          ) : (
+            // Specific scope: Show document selection
+            <>
+              <Typography variant="h6" gutterBottom sx={{ color: '#ffffff', fontWeight: 600 }}>
+                Select Documents to Index
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>
+                Choose specific documents from the available files to index for this project.
+              </Typography>
+
+          {availableFiles.length > 0 ? (
+            <List sx={{ maxHeight: 300, overflow: 'auto' }}>
+              {availableFiles.map((file) => (
+                <ListItem key={file} sx={{ px: 0 }}>
+                  <ListItemIcon>
+                    <Checkbox
+                      checked={selectedDocuments.includes(file)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedDocuments(prev => [...prev, file]);
+                        } else {
+                          setSelectedDocuments(prev => prev.filter(doc => doc !== file));
+                        }
+                      }}
+                      sx={{
+                        color: 'rgba(255, 255, 255, 0.7)',
+                        '&.Mui-checked': {
+                          color: '#3b82f6',
+                        },
+                      }}
+                    />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={file}
+                    sx={{
+                      '& .MuiListItemText-primary': {
+                        color: '#ffffff',
+                        fontSize: '0.9rem',
+                      },
+                    }}
+                  />
+                </ListItem>
+              ))}
+            </List>
+          ) : (
+            <Typography variant="body2" sx={{ color: 'text.secondary', fontStyle: 'italic' }}>
+              No documents available for indexing.
+            </Typography>
+          )}
+
+          {selectedDocuments.length > 0 && (
+            <Box sx={{ mt: 2 }}>
+              <Button
+                variant="contained"
+                onClick={indexSelectedDocuments}
+                disabled={uploading}
+                startIcon={uploading ? <CircularProgress size={20} /> : <AssessmentIcon />}
+                sx={{
+                  background: 'linear-gradient(135deg, rgba(132, 204, 22, 0.2) 0%, rgba(132, 204, 22, 0.1) 100%)',
+                  backdropFilter: 'blur(10px)',
+                  color: '#ffffff',
+                  border: '1px solid rgba(132, 204, 22, 0.3)',
+                  borderRadius: 3,
+                  px: 3,
+                  py: 1.5,
+                  fontWeight: 600,
+                  position: 'relative',
+                  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
+                  '&::before': {
+                    content: '""',
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'linear-gradient(135deg, rgba(132, 204, 22, 0.4) 0%, rgba(132, 204, 22, 0.3) 100%)',
+                    borderRadius: 'inherit',
+                    pointerEvents: 'none',
+                  },
+                  transition: 'all 0.3s ease',
+                  '&:hover': {
+                    transform: 'translateY(-2px)',
+                    background: 'linear-gradient(135deg, rgba(132, 204, 22, 0.25) 0%, rgba(132, 204, 22, 0.15) 100%)',
+                    boxShadow: '0 12px 40px rgba(132, 204, 22, 0.3)',
+                    '&::before': {
+                      background: 'linear-gradient(135deg, rgba(132, 204, 22, 0.5) 0%, rgba(132, 204, 22, 0.4) 100%)',
+                    }
+                  },
+                  '&:disabled': {
+                    background: 'rgba(255, 255, 255, 0.05)',
+                    color: 'rgba(255, 255, 255, 0.5)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    transform: 'none',
+                    boxShadow: 'none',
+                    '&::before': {
+                      display: 'none',
+                    }
+                  },
+                  '& .MuiButton-startIcon': {
+                    color: '#ffffff',
+                    opacity: 0.9,
+                  }
+                }}
+              >
+                {uploading ? 'Indexing Selected Documents...' : `Index ${selectedDocuments.length} Selected Document${selectedDocuments.length > 1 ? 's' : ''}`}
+              </Button>
+            </Box>
+          )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Indexed Documents Section */}
+      {project.documents && project.documents.length > 0 && (
+        <Card sx={{
+          mb: 3,
+          background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%)',
+          backdropFilter: 'blur(10px)',
+          border: '1px solid rgba(16, 185, 129, 0.2)',
+          borderRadius: 3,
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
+        }}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom sx={{ color: '#ffffff', fontWeight: 600 }}>
+              Indexed Documents ({project.documents.length})
+            </Typography>
+            <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>
+              Documents that have been indexed and are available for question answering.
+            </Typography>
+
+            <List sx={{ maxHeight: 200, overflow: 'auto' }}>
+              {project.documents.map((doc) => (
+                <ListItem key={doc.id} sx={{ px: 0 }}>
+                  <ListItemIcon>
+                    <DescriptionIcon sx={{ color: '#10b981' }} />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={doc.filename}
+                    sx={{
+                      '& .MuiListItemText-primary': {
+                        color: '#ffffff',
+                        fontSize: '0.9rem',
+                      },
+                    }}
+                  />
+                </ListItem>
+              ))}
+            </List>
+          </CardContent>
+        </Card>
+      )}
 
       {error && (
         <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
@@ -580,6 +1000,42 @@ export default function ProjectDetail() {
         <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>
           {success}
         </Alert>
+      )}
+
+      {generationProgress.total > 0 && (
+        <Card sx={{
+          mb: 3,
+          background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%)',
+          backdropFilter: 'blur(10px)',
+          border: '1px solid rgba(59, 130, 246, 0.2)',
+          color: '#ffffff',
+        }}>
+          <CardContent>
+            <Box display="flex" alignItems="center" mb={2}>
+              <CircularProgress size={24} sx={{ mr: 2, color: '#3b82f6' }} />
+              <Typography variant="h6" sx={{ color: '#ffffff', fontWeight: 600 }}>
+                AI Analysis in Progress
+              </Typography>
+            </Box>
+            <LinearProgress
+              variant="determinate"
+              value={(generationProgress.current / generationProgress.total) * 100}
+              sx={{
+                mb: 2,
+                height: 8,
+                borderRadius: 4,
+                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                '& .MuiLinearProgress-bar': {
+                  backgroundColor: '#3b82f6',
+                  borderRadius: 4,
+                }
+              }}
+            />
+            <Typography variant="body2" sx={{ color: 'rgba(255, 255, 255, 0.8)' }}>
+              {generationProgress.message || `Processing ${generationProgress.current} of ${generationProgress.total} questions...`}
+            </Typography>
+          </CardContent>
+        </Card>
       )}
 
       <Card sx={{

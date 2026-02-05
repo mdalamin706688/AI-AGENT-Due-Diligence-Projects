@@ -103,12 +103,12 @@ export default function ProjectList() {
         const response = await fetch(`http://localhost:8000/requests/${requestId}`);
         const status = await response.json();
 
-        if (status.status === 'COMPLETED') {
+        if (status.status === 'completed') {
           setLoading(false);
           setSuccess('Project created successfully!');
           fetchProjects();
           setTimeout(() => setSuccess(null), 3000);
-        } else if (status.status === 'FAILED') {
+        } else if (status.status === 'failed') {
           setLoading(false);
           setError('Project creation failed: ' + status.error);
         } else {

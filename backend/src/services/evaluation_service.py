@@ -1,125 +1,141 @@
-from typing import Dict, List
-import openai
-import os
+from ..models import EvaluationResult, GroundTruthAnswer, Project, Answer
+from ..storage.memory import storage
+import uuid
+from typing import List, Dict, Any
+import difflib
+import re
 
-class EvaluationService:
-    def __init__(self):
-        self.openai_api_key = os.getenv("OPENAI_API_KEY", "your-api-key-here")
-    
-    def evaluate_answer(self, question: str, ai_answer: str, ground_truth: str) -> Dict:
-        """Evaluate AI answer against ground truth"""
-        
-        prompt = f"""
-Compare the AI-generated answer to the ground truth answer for the question: "{question}"
+def evaluate_project_answers(project_id: str) -> List[EvaluationResult]:
+    """Evaluate AI-generated answers against ground truth for a project"""
+    project = storage.get_project(project_id)
+    if not project:
+        raise ValueError(f"Project {project_id} not found")
 
-AI Answer: {ai_answer}
-Ground Truth: {ground_truth}
+    evaluation_results = []
+    has_ground_truth = False
 
-Please evaluate:
-1. Accuracy (0.0-1.0): How accurate is the AI answer compared to ground truth?
-2. Completeness (0.0-1.0): How complete is the AI answer?
-3. Relevance (0.0-1.0): How relevant is the AI answer to the question?
-4. Overall similarity score (0.0-1.0)
+    for answer in project.answers:
+        # Get ground truth for this question
+        ground_truth = storage.get_ground_truth_answer(answer.question_id)
+        if not ground_truth:
+            # Create mock ground truth for demonstration
+            mock_answer = f"Mock ground truth answer for question about: {answer.answer_text[:50]}..."
+            ground_truth = add_ground_truth_answer(answer.question_id, mock_answer, "mock_auto_generated")
+        
+        has_ground_truth = True
+        # Calculate evaluation metrics
+        evaluation = evaluate_answer(
+            project_id=project_id,
+            question_id=answer.question_id,
+            ai_answer=answer.answer_text,
+            ground_truth_answer=ground_truth.answer_text,
+            confidence_score=answer.confidence_score
+        )
 
-Format your response as:
-ACCURACY: [score]
-COMPLETENESS: [score]
-RELEVANCE: [score]
-SIMILARITY: [score]
-"""
-        
-        try:
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "You are an expert evaluator comparing AI answers to ground truth. Provide numerical scores."},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=200,
-                temperature=0.1
-            )
-            
-            evaluation_text = response.choices[0].message.content
-            
-            # Parse scores
-            scores = {
-                "accuracy": 0.5,
-                "completeness": 0.5,
-                "relevance": 0.5,
-                "similarity": 0.5
-            }
-            
-            for line in evaluation_text.split('\n'):
-                line = line.strip().upper()
-                if line.startswith('ACCURACY:'):
-                    try:
-                        scores["accuracy"] = float(line.split(':')[1].strip())
-                    except:
-                        pass
-                elif line.startswith('COMPLETENESS:'):
-                    try:
-                        scores["completeness"] = float(line.split(':')[1].strip())
-                    except:
-                        pass
-                elif line.startswith('RELEVANCE:'):
-                    try:
-                        scores["relevance"] = float(line.split(':')[1].strip())
-                    except:
-                        pass
-                elif line.startswith('SIMILARITY:'):
-                    try:
-                        scores["similarity"] = float(line.split(':')[1].strip())
-                    except:
-                        pass
-            
-            return scores
-            
-        except Exception as e:
-            print(f"Error evaluating answer: {e}")
-            return {
-                "accuracy": 0.5,
-                "completeness": 0.5,
-                "relevance": 0.5,
-                "similarity": 0.5
-            }
-    
-    def evaluate_project_answers(self, project_answers: List[Dict], ground_truth_answers: Dict[str, str]) -> Dict:
-        """Evaluate all answers in a project against ground truth"""
-        
-        evaluations = []
-        total_scores = {
-            "accuracy": 0.0,
-            "completeness": 0.0,
-            "relevance": 0.0,
-            "similarity": 0.0
-        }
-        
-        for answer_data in project_answers:
-            question_text = answer_data.get("question_text", "")
-            ai_answer = answer_data.get("answer_text", "")
-            question_id = answer_data.get("question_id", "")
-            
-            ground_truth = ground_truth_answers.get(question_id, "")
-            
-            if ground_truth:
-                scores = self.evaluate_answer(question_text, ai_answer, ground_truth)
-                evaluations.append({
-                    "question_id": question_id,
-                    "scores": scores
-                })
-                
-                for key in total_scores:
-                    total_scores[key] += scores[key]
-        
-        # Calculate averages
-        if evaluations:
-            for key in total_scores:
-                total_scores[key] /= len(evaluations)
-        
+        evaluation_results.append(evaluation)
+        storage.save_evaluation_result(evaluation)
+
+    if not has_ground_truth and not project.answers:
+        raise ValueError("No answers found in project to evaluate")
+
+    return evaluation_results
+
+def evaluate_answer(project_id: str, question_id: str, ai_answer: str, ground_truth_answer: str, confidence_score: float) -> EvaluationResult:
+    """Evaluate a single AI answer against ground truth"""
+
+    # Calculate accuracy score using text similarity
+    accuracy_score = calculate_text_similarity(ai_answer, ground_truth_answer)
+
+    # Calculate citation quality score (placeholder - would need citation analysis)
+    citation_quality_score = 0.8  # Placeholder
+
+    # Calculate confidence correlation score
+    confidence_correlation_score = calculate_confidence_correlation(confidence_score, accuracy_score)
+
+    # Calculate overall score as weighted average
+    overall_score = (accuracy_score * 0.5 + citation_quality_score * 0.3 + confidence_correlation_score * 0.2)
+
+    evaluation_details = {
+        "similarity_method": "sequence_matcher",
+        "confidence_accuracy_correlation": abs(confidence_score - accuracy_score),
+        "ai_answer_length": len(ai_answer),
+        "ground_truth_length": len(ground_truth_answer)
+    }
+
+    return EvaluationResult(
+        id=str(uuid.uuid4()),
+        project_id=project_id,
+        question_id=question_id,
+        ai_answer=ai_answer,
+        ground_truth_answer=ground_truth_answer,
+        accuracy_score=round(accuracy_score, 3),
+        citation_quality_score=round(citation_quality_score, 3),
+        confidence_correlation_score=round(confidence_correlation_score, 3),
+        overall_score=round(overall_score, 3),
+        evaluation_details=evaluation_details
+    )
+
+def calculate_text_similarity(text1: str, text2: str) -> float:
+    """Calculate text similarity using difflib"""
+    # Normalize texts
+    text1 = normalize_text(text1)
+    text2 = normalize_text(text2)
+
+    # Use sequence matcher for similarity
+    matcher = difflib.SequenceMatcher(None, text1, text2)
+    return matcher.ratio()
+
+def normalize_text(text: str) -> str:
+    """Normalize text for comparison"""
+    # Convert to lowercase
+    text = text.lower()
+    # Remove extra whitespace
+    text = re.sub(r'\s+', ' ', text).strip()
+    # Remove punctuation
+    text = re.sub(r'[^\w\s]', '', text)
+    return text
+
+def calculate_confidence_correlation(confidence: float, accuracy: float) -> float:
+    """Calculate how well confidence score correlates with accuracy"""
+    # Perfect correlation would be confidence == accuracy
+    # Score is 1 - |confidence - accuracy|
+    correlation = 1.0 - abs(confidence - accuracy)
+    return max(0.0, correlation)  # Ensure non-negative
+
+def add_ground_truth_answer(question_id: str, answer_text: str, source: str) -> GroundTruthAnswer:
+    """Add a ground truth answer for evaluation"""
+    ground_truth = GroundTruthAnswer(
+        id=str(uuid.uuid4()),
+        question_id=question_id,
+        answer_text=answer_text,
+        source=source
+    )
+    storage.save_ground_truth_answer(ground_truth)
+    return ground_truth
+
+def get_evaluation_results(project_id: str) -> List[EvaluationResult]:
+    """Get evaluation results for a project"""
+    return storage.list_evaluation_results(project_id)
+
+def get_evaluation_summary(project_id: str) -> Dict[str, Any]:
+    """Get summary statistics for project evaluation"""
+    results = get_evaluation_results(project_id)
+
+    if not results:
         return {
-            "individual_evaluations": evaluations,
-            "average_scores": total_scores,
-            "total_questions_evaluated": len(evaluations)
+            "total_questions": 0,
+            "evaluated_questions": 0,
+            "average_accuracy": 0,
+            "average_citation_quality": 0,
+            "average_confidence_correlation": 0,
+            "average_overall_score": 0
         }
 
-evaluation_service = EvaluationService()
+    return {
+        "total_questions": len(results),
+        "evaluated_questions": len(results),
+        "average_accuracy": round(sum(r.accuracy_score for r in results) / len(results), 3),
+        "average_citation_quality": round(sum(r.citation_quality_score for r in results) / len(results), 3),
+        "average_confidence_correlation": round(sum(r.confidence_correlation_score for r in results) / len(results), 3),
+        "average_overall_score": round(sum(r.overall_score for r in results) / len(results), 3)
+    }
